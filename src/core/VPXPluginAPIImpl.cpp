@@ -22,6 +22,37 @@
 #include "physics/PhysicsEngine.h"
 #include "renderer/Renderer.h"
 #include "ui/live/LiveUI.h"
+#include "core/BotBridgeEvents.h"
+
+// Discrete hit/switch event ring for the bot-bridge stream. [bot-bridge]
+// Single-threaded in practice: the producer (physics collision/mover code) and the consumer
+// (the plugin's GetHitEvents call from its OnUpdatePhysics subscriber) both run on the
+// physics/logic thread, so plain indices are safe. Names/types are resolved at drain time.
+namespace
+{
+   struct BBHitRec { double t; IEditable* part; uint32_t kind; float scalar; };
+   constexpr unsigned int kBBHitRingSize = 1024; // power of two
+   BBHitRec g_bbHitRing[kBBHitRingSize];
+   unsigned int g_bbHitHead = 0, g_bbHitTail = 0, g_bbHitDropped = 0;
+}
+
+void BotBridge::PushHitEvent(IEditable* part, unsigned int kind, float scalar)
+{
+   if (!part || !g_pplayer)
+      return;
+   const unsigned int next = (g_bbHitHead + 1) & (kBBHitRingSize - 1);
+   if (next == g_bbHitTail) // full -> drop newest
+   {
+      ++g_bbHitDropped;
+      return;
+   }
+   BBHitRec& r = g_bbHitRing[g_bbHitHead];
+   r.t = g_pplayer->m_time_sec;
+   r.part = part;
+   r.kind = kind;
+   r.scalar = scalar;
+   g_bbHitHead = next;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // General information API
@@ -467,6 +498,29 @@ unsigned int MSGPIAPI VPXPluginAPIImpl::GetGeometry(VPXPartGeom* out, const unsi
    return total;
 }
 
+// Drain up to maxCount queued hit/switch events; returns the number written. Call repeatedly
+// while it returns maxCount to fully drain. Names/types resolved here (off the collision hot path).
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetHitEvents(VPXHitEvent* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+   unsigned int n = 0;
+   while (g_bbHitTail != g_bbHitHead && n < maxCount)
+   {
+      const BBHitRec& r = g_bbHitRing[g_bbHitTail];
+      VPXHitEvent& e = out[n];
+      e.timeSec = r.t;
+      e.partType = r.part ? static_cast<uint32_t>(r.part->GetItemType()) : 0xFFFFFFFFu;
+      e.eventKind = r.kind;
+      e.scalar = r.scalar;
+      const string nm = r.part ? r.part->GetName() : string();
+      snprintf(e.name, sizeof(e.name), "%s", nm.c_str());
+      ++n;
+      g_bbHitTail = (g_bbHitTail + 1) & (kBBHitRingSize - 1);
+   }
+   return n;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Rendering
@@ -838,6 +892,7 @@ void VPXPluginAPIImpl::UpdateSetting(const std::string& pluginId, MsgPI::MsgPlug
 void VPXPluginAPIImpl::OnGameStart()
 {
    assert(m_dmdSources.empty());
+   g_bbHitHead = g_bbHitTail = g_bbHitDropped = 0; // [bot-bridge] reset hit-event ring for the new game
    const auto& msgApi = m_msgApi;
 
    msgApi.SubscribeMsg(GetVPXEndPointId(), m_onDisplayGetSrcMsgId, &ControllerOnGetDMDSrc, this);
@@ -1027,6 +1082,7 @@ VPXPluginAPIImpl::VPXPluginAPIImpl(MsgPI::MsgPluginManager& pluginManager)
    m_api.GetLampDescriptors = GetLampDescriptors;
    m_api.GetGeometry = GetGeometry;
    m_api.GetTableState = GetTableState;
+   m_api.GetHitEvents = GetHitEvents;
 
    m_api.CreateTexture = CreateTexture;
    m_api.UpdateTexture = UpdateTexture;

@@ -1,6 +1,7 @@
 // license:GPLv3+
 
 #include "core/stdafx.h"
+#include "core/BotBridgeEvents.h"
 
 #ifdef USE_EMBREE
 #include <mutex>
@@ -33,6 +34,7 @@ void HitObject::FireHitEvent(HitBall* const pball)
       pball->m_lastEventSqrDist = 0.f;
       pball->m_lastEventPos = pball->m_d.m_pos; // remember last collision position
       m_obj->FireGroupEvent(DISPID_HitEvents_Hit);
+      BotBridge::PushHitEvent(m_editable, BotBridge::HE_HIT, 0.f); // [bot-bridge]
    }
 }
 

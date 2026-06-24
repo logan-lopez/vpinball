@@ -1,6 +1,7 @@
 // license:GPLv3+
 
 #include "core/stdafx.h"
+#include "core/BotBridgeEvents.h"
 
 #include "imgui/imgui.h"
 #include "parts/bumper.h"
@@ -37,6 +38,7 @@ void BumperHitCircle::Collide(const CollisionEvent& coll)
       m_bumperanim_hitEvent = true;
       m_bumperanim_hitBallPosition = coll.m_ball->m_d.m_pos;
       pBumper->FireGroupEvent(DISPID_HitEvents_Hit);
+      BotBridge::PushHitEvent(pBumper, BotBridge::HE_HIT, 0.f); // [bot-bridge]
    }
 }
 
@@ -97,6 +99,7 @@ void LineSegSlingshot::Collide(const CollisionEvent& coll)
       if (dist_ls > 0.25f) //!! magic distance, must be a new place if only by a little
       {
          m_obj->FireGroupEvent(DISPID_SurfaceEvents_Slingshot);
+         BotBridge::PushHitEvent(m_psurface, BotBridge::HE_SLINGSHOT, 0.f); // [bot-bridge]
          m_TimeReset = g_pplayer->m_time_msec + 100;
 
          g_pplayer->m_pininput.PlayRumble(0.15f, 0.1f, 100);
@@ -449,12 +452,12 @@ void SpinnerMoverObject::UpdateDisplacements(const float dtime)
       if (m_anglespeed > 0.f)
       {
          if (m_angle > target)
-            m_pspinner->FireGroupEvent(DISPID_SpinnerEvents_Spin);
+            { m_pspinner->FireGroupEvent(DISPID_SpinnerEvents_Spin); BotBridge::PushHitEvent(m_pspinner, BotBridge::HE_SPIN, fabsf(RADTOANG(m_anglespeed))); } // [bot-bridge]
       }
       else
       {
          if (m_angle < target)
-            m_pspinner->FireGroupEvent(DISPID_SpinnerEvents_Spin);
+            { m_pspinner->FireGroupEvent(DISPID_SpinnerEvents_Spin); BotBridge::PushHitEvent(m_pspinner, BotBridge::HE_SPIN, fabsf(RADTOANG(m_anglespeed))); } // [bot-bridge]
       }
 
       while (m_angle > (float)(2.0*M_PI))
@@ -725,12 +728,12 @@ void Hit3DPoly::Collide(const CollisionEvent& coll)
          if (i < 0)
          {
             pball->m_d.m_vpVolObjs->push_back(m_obj);
-            ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit);
+            ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_HIT, 0.f); // [bot-bridge]
          }
          else
          {
             pball->m_d.m_vpVolObjs->erase(pball->m_d.m_vpVolObjs->begin() + i);
-            ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit);
+            ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_UNHIT, 0.f); // [bot-bridge]
          }
       }
    }
@@ -1185,13 +1188,13 @@ void TriggerLineSeg::Collide(const CollisionEvent& coll)
       {
          pball->m_d.m_vpVolObjs->push_back(m_obj);
          ((Trigger*)m_obj)->TriggerAnimationHit();
-         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit);
+         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_HIT, 0.f); // [bot-bridge]
       }
       else
       {
          pball->m_d.m_vpVolObjs->erase(pball->m_d.m_vpVolObjs->begin() + i);
          ((Trigger*)m_obj)->TriggerAnimationUnhit();
-         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit);
+         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_UNHIT, 0.f); // [bot-bridge]
       }
    }
 }
@@ -1224,13 +1227,13 @@ void TriggerHitCircle::Collide(const CollisionEvent& coll)
       {
          pball->m_d.m_vpVolObjs->push_back(m_obj);
          ((Trigger*)m_obj)->TriggerAnimationHit();
-         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit);
+         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Hit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_HIT, 0.f); // [bot-bridge]
       }
       else
       {
          pball->m_d.m_vpVolObjs->erase(pball->m_d.m_vpVolObjs->begin() + i);
          ((Trigger*)m_obj)->TriggerAnimationUnhit();
-         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit);
+         ((Trigger*)m_obj)->FireGroupEvent(DISPID_HitEvents_Unhit); BotBridge::PushHitEvent((Trigger*)m_obj, BotBridge::HE_UNHIT, 0.f); // [bot-bridge]
       }
    }
 }

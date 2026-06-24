@@ -318,6 +318,19 @@ typedef struct VPXPartGeom
    float    ex, ey, ez;               // type-specific secondary point / extent
 } VPXPartGeom;
 
+// A discrete hit/switch event (ball hit a wall/target/bumper/trigger/kicker, slingshot fired,
+// spinner spun, ...). Drained via GetHitEvents each tick. These are PHYSICAL events, not ROM
+// logical switch numbers (mapping a hit to a game switch is table-specific).
+// eventKind: 0=hit, 1=unhit, 2=slingshot, 3=spin, 4=eos, 5=bos, 6=flipperCollide.
+typedef struct VPXHitEvent
+{
+   double   timeSec;                  // engine game time of the event, seconds
+   uint32_t partType;                 // ItemTypeEnum of the part involved
+   uint32_t eventKind;
+   float    scalar;                   // event payload (e.g. spin speed deg/s), 0 if none
+   char     name[64];                 // element name (UTF-8) of the part involved
+} VPXHitEvent;
+
 typedef struct VPXPluginAPI
 {
    // General information API
@@ -372,5 +385,6 @@ typedef struct VPXPluginAPI
    unsigned int(MSGPIAPI* GetLampDescriptors)(VPXLampDesc* out, const unsigned int maxCount); // once at load: index+name
    unsigned int(MSGPIAPI* GetGeometry)(VPXPartGeom* out, const unsigned int maxCount);       // once at load: static geometry
    void(MSGPIAPI* GetTableState)(VPXTableState* out);                                        // nudge/tilt globals
+   unsigned int(MSGPIAPI* GetHitEvents)(VPXHitEvent* out, const unsigned int maxCount);      // drain discrete hit/switch events
 
 } VPXPluginAPI;

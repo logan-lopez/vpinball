@@ -93,6 +93,7 @@ private:
    static unsigned int MSGPIAPI GetLampDescriptors(VPXLampDesc* out, const unsigned int maxCount);
    static unsigned int MSGPIAPI GetGeometry(VPXPartGeom* out, const unsigned int maxCount);
    static void MSGPIAPI GetTableState(VPXTableState* out);
+   static unsigned int MSGPIAPI GetHitEvents(VPXHitEvent* out, const unsigned int maxCount);
 
    static VPXTexture MSGPIAPI CreateTexture(uint8_t* rawData, int size);
    static void MSGPIAPI UpdateTexture(VPXTexture* texture, int width, int height, VPXTextureFormat format, const void* image);

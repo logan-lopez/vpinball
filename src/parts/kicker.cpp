@@ -1,6 +1,7 @@
 // license:GPLv3+
 
 #include "core/stdafx.h"
+#include "core/BotBridgeEvents.h"
 #include "kicker.h"
 
 #include "core/VPApp.h"
@@ -1157,7 +1158,10 @@ void KickerHitCircle::DoCollide(HitBall *const pball, const Vertex3Ds &hitnormal
             // Don't fire the hit event if the ball was just created
             // Fire the event before changing ball attributes, so scripters can get a useful ball state
             if (!newBall)
+            {
                m_pkicker->FireGroupEvent(DISPID_HitEvents_Hit);
+               BotBridge::PushHitEvent(m_pkicker, BotBridge::HE_HIT, 0.f); // [bot-bridge]
+            }
 
             if (pball->m_d.m_lockedInKicker || m_pkicker->m_d.m_fallThrough)	// script may have unfrozen the ball
             {
@@ -1186,6 +1190,7 @@ void KickerHitCircle::DoCollide(HitBall *const pball, const Vertex3Ds &hitnormal
       {
          pball->m_d.m_vpVolObjs->erase(pball->m_d.m_vpVolObjs->begin() + i); // remove kicker to ball's volume set
          m_pkicker->FireGroupEvent(DISPID_HitEvents_Unhit);
+         BotBridge::PushHitEvent(m_pkicker, BotBridge::HE_UNHIT, 0.f); // [bot-bridge]
       }
    }
 }
