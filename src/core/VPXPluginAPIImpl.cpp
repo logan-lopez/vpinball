@@ -5,6 +5,8 @@
 
 #include "core/VPApp.h"
 #include "parts/flasher.h"
+#include "parts/ball.h"
+#include "parts/flipper.h"
 #include "renderer/Renderer.h"
 #include "ui/live/LiveUI.h"
 
@@ -145,6 +147,72 @@ void MSGPIAPI VPXPluginAPIImpl::SetPlungerState(const int stateMask, const float
 double MSGPIAPI VPXPluginAPIImpl::GetGameTime()
 {
    return g_pplayer ? g_pplayer->m_time_sec : 0.0;
+}
+
+// Live game-state telemetry (read-only). [bot-bridge extension]
+// Reads engine internals (the ball list / table parts) that are not otherwise
+// reachable across the C-ABI plugin boundary, and exposes them as a small,
+// table-agnostic, read-only surface. Only valid in game; intended to be called
+// from a VPX callback (e.g. an OnUpdatePhysics subscriber) so the state read is
+// consistent with the physics step and stays on the API thread.
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetBalls(VPXBallState* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   const vector<Ball*>& balls = g_pplayer->m_vball; // every live ball (multiball-safe)
+   const unsigned int total = static_cast<unsigned int>(balls.size());
+   for (unsigned int i = 0; i < total && i < maxCount; ++i)
+   {
+      Ball* const pBall = balls[i];
+      VPXBallState& b = out[i];
+
+      int id = 0;
+      pBall->get_ID(&id);
+      b.id = static_cast<uint32_t>(id);
+
+      const Vertex3Ds& pos = pBall->m_hitBall.m_d.m_pos;
+      const Vertex3Ds& vel = pBall->m_hitBall.m_d.m_vel;
+      b.x = pos.x; b.y = pos.y; b.z = pos.z;
+      b.vx = vel.x; b.vy = vel.y; b.vz = vel.z;
+
+      // Engine stores angular momentum; angular velocity = L / I (solid sphere)
+      const float inertia = pBall->m_hitBall.Inertia();
+      const Vertex3Ds& angMom = pBall->m_hitBall.m_angularmomentum;
+      if (inertia > 0.f)
+      {
+         b.angVelX = angMom.x / inertia;
+         b.angVelY = angMom.y / inertia;
+         b.angVelZ = angMom.z / inertia;
+      }
+      else
+         b.angVelX = b.angVelY = b.angVelZ = 0.f;
+
+      b.radius = pBall->m_hitBall.m_d.m_radius;
+      b.mass = pBall->m_hitBall.m_d.m_mass;
+   }
+   return total;
+}
+
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetFlippers(VPXFlipperState* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   unsigned int total = 0;
+   for (IEditable* const pedit : g_pplayer->m_ptable->GetParts())
+   {
+      if (pedit->GetItemType() != eItemFlipper)
+         continue;
+      if (total < maxCount)
+      {
+         float angle = 0.f;
+         static_cast<Flipper*>(pedit)->get_CurrentAngle(&angle); // live angle in degrees
+         out[total].angle = angle;
+      }
+      ++total;
+   }
+   return total;
 }
 
 
@@ -699,6 +767,9 @@ VPXPluginAPIImpl::VPXPluginAPIImpl(MsgPI::MsgPluginManager& pluginManager)
    m_api.SetPlungerState = SetPlungerState;
 
    m_api.GetGameTime = GetGameTime;
+
+   m_api.GetBalls = GetBalls;
+   m_api.GetFlippers = GetFlippers;
 
    m_api.CreateTexture = CreateTexture;
    m_api.UpdateTexture = UpdateTexture;

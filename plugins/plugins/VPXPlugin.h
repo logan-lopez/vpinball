@@ -239,6 +239,32 @@ typedef struct VPXActionEvent
    int isPressed;
 } VPXActionEvent;
 
+// ---------------------------------------------------------------------------
+// Live game-state telemetry (read-only). [bot-bridge extension]
+//
+// All values use the VPX table/physics frame: VPU length units (50 VPU =
+// 1.0625" = 26.9875mm, i.e. 1 VPU = 0.53975mm), origin at the playfield
+// top-left, +X right, +Y down-table toward the drain, +Z up (playfield
+// surface at z=0). Linear velocity is in VPU per VP time tick (1 VPT = 0.01s);
+// multiply by 100 for VPU/s. These getters are only valid in game (between
+// OnGameStart and OnGameEnd) and must be called on a VPX callback thread
+// (e.g. from an OnUpdatePhysics subscriber), not from a plugin worker thread.
+// ---------------------------------------------------------------------------
+typedef struct VPXBallState
+{
+   uint32_t id;                       // stable unique id for the ball's lifetime
+   float x, y, z;                     // position, VPU
+   float vx, vy, vz;                  // linear velocity, VPU/VPT
+   float angVelX, angVelY, angVelZ;   // angular velocity, rad/VPT (derived: angular momentum / inertia)
+   float radius;                      // VPU
+   float mass;                        // arbitrary VPX mass units
+} VPXBallState;
+
+typedef struct VPXFlipperState
+{
+   float angle;                       // current flipper angle, degrees
+} VPXFlipperState;
+
 typedef struct VPXPluginAPI
 {
    // General information API
@@ -281,5 +307,12 @@ typedef struct VPXPluginAPI
    // Destroy a texture created through this API.
    // Thread safe
    void(MSGPIAPI* DeleteTexture)(VPXTexture texture);
+
+   // Live game-state telemetry (read-only, in game only). [bot-bridge extension]
+   // Each fills up to 'maxCount' entries into 'out' and returns the TOTAL count
+   // available (which may exceed maxCount). See VPXBallState/VPXFlipperState above
+   // for units and the coordinate frame. NOT thread safe: call from a VPX callback.
+   unsigned int(MSGPIAPI* GetBalls)(VPXBallState* out, const unsigned int maxCount);
+   unsigned int(MSGPIAPI* GetFlippers)(VPXFlipperState* out, const unsigned int maxCount);
 
 } VPXPluginAPI;

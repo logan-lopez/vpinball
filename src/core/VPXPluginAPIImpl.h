@@ -84,6 +84,10 @@ private:
 
    static double MSGPIAPI GetGameTime();
 
+   // Live game-state telemetry (read-only, in game only). [bot-bridge extension]
+   static unsigned int MSGPIAPI GetBalls(VPXBallState* out, const unsigned int maxCount);
+   static unsigned int MSGPIAPI GetFlippers(VPXFlipperState* out, const unsigned int maxCount);
+
    static VPXTexture MSGPIAPI CreateTexture(uint8_t* rawData, int size);
    static void MSGPIAPI UpdateTexture(VPXTexture* texture, int width, int height, VPXTextureFormat format, const void* image);
    static VPXTextureInfo* MSGPIAPI GetTextureInfo(VPXTexture texture);
