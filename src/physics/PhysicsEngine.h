@@ -41,6 +41,7 @@ public:
    void Nudge(float angle, float force);
    Vertex3Ds GetNudgeAcceleration() const { return m_tableAcceleration + m_nudgeAcceleration; } // Table acceleration (due to nudge) expressed in VP units
    Vertex2D GetTableDisplacement() const; // Table displacement
+   Vertex2D GetTableVelocity() const { return Vertex2D(m_tableVel.x, m_tableVel.y); } // Spring-model table velocity, VPU per VP-tick (x/y only)
    bool IsLegacyKeyboardNudge() const { return m_legacyNudge; }
    void SetLegacyKeyboardNudge(bool legacyNudge) { m_legacyNudge = legacyNudge; }
    float GetLegacyKeyboardNudgeStrength() const { return m_legacyNudgeStrength; }

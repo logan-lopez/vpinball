@@ -263,7 +263,60 @@ typedef struct VPXBallState
 typedef struct VPXFlipperState
 {
    float angle;                       // current flipper angle, degrees
+   float angleSpeed;                  // angular velocity, degrees per VP-tick (x100 for deg/s)
+   int   solenoid;                    // bool: coil energized (button pressed)
+   int   endOfStroke;                 // bool: resting against the end stop
 } VPXFlipperState;
+
+typedef struct VPXPlungerState
+{
+   float position;                    // normalized 0..1 (0 = forward/released, 1 = fully pulled back)
+   float posVPU;                      // raw rod-tip position, VPU
+   float speed;                       // VPU per VP-tick; >0 = retracting, <0 = firing forward
+   float restPos;                     // rest/park fraction 0..1 (table-specific; "at rest" is not 0)
+} VPXPlungerState;
+
+// A lamp's state. mode = configured tri-state {0=off,1=on,2=blinking}; lit = instantaneous
+// on/off with blink phase resolved; intensity = live faded emission (relative, can exceed 1).
+typedef struct VPXLampState
+{
+   int   mode;
+   int   lit;
+   float intensity;
+} VPXLampState;
+
+// Static lamp descriptor (sent once at game start); GetLamps() returns state by the same index.
+typedef struct VPXLampDesc
+{
+   uint32_t index;
+   char     name[64];                 // element name (UTF-8), empty if unnamed
+   int      mode;                     // configured mode at load
+} VPXLampDesc;
+
+// Global table dynamics (nudge + tilt). Tilt *warnings remaining* is table-script/ROM state and
+// is NOT exposed (not uniformly available). Acceleration: VPU/VPT^2; velocity: VPU/VPT.
+typedef struct VPXTableState
+{
+   float nudgeAccelX, nudgeAccelY;    // applied nudge acceleration (table frame), VPU/VPT^2
+   float tableVelX, tableVelY;        // spring-model table velocity (table frame), VPU/VPT
+   float tableDispX, tableDispY;      // visual table shake displacement (screen frame, y flipped), VPU
+   int   tiltActive;                  // bool: tilt input currently active (key/plumb/hw)
+   int   slamTiltActive;              // bool: slam-tilt input currently active
+   int   plumbSimulated;              // bool: mechanical plumb-bob tilt is simulated
+   int   plumbTiltCount;              // monotonic count of plumb tilt events since game start
+} VPXTableState;
+
+// Static geometry of one collidable part (sent once at game start). All lengths VPU, angles degrees,
+// table frame (origin top-left, +X right, +Y down, +Z up). Fields a/b/c/d and ex/ey/ez are
+// type-specific; see the schema in plugins/bot-bridge/README.md.
+typedef struct VPXPartGeom
+{
+   uint32_t type;                     // ItemTypeEnum (see VPX iselect.h)
+   char     name[64];                 // element name (UTF-8)
+   float    x, y, z;                  // primary center / position
+   float    a, b, c, d;               // type-specific scalars
+   float    ex, ey, ez;               // type-specific secondary point / extent
+} VPXPartGeom;
 
 typedef struct VPXPluginAPI
 {
@@ -314,5 +367,10 @@ typedef struct VPXPluginAPI
    // for units and the coordinate frame. NOT thread safe: call from a VPX callback.
    unsigned int(MSGPIAPI* GetBalls)(VPXBallState* out, const unsigned int maxCount);
    unsigned int(MSGPIAPI* GetFlippers)(VPXFlipperState* out, const unsigned int maxCount);
+   unsigned int(MSGPIAPI* GetPlungers)(VPXPlungerState* out, const unsigned int maxCount);
+   unsigned int(MSGPIAPI* GetLamps)(VPXLampState* out, const unsigned int maxCount);        // per-tick state, by index
+   unsigned int(MSGPIAPI* GetLampDescriptors)(VPXLampDesc* out, const unsigned int maxCount); // once at load: index+name
+   unsigned int(MSGPIAPI* GetGeometry)(VPXPartGeom* out, const unsigned int maxCount);       // once at load: static geometry
+   void(MSGPIAPI* GetTableState)(VPXTableState* out);                                        // nudge/tilt globals
 
 } VPXPluginAPI;

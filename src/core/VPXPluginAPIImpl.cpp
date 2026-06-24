@@ -7,6 +7,19 @@
 #include "parts/flasher.h"
 #include "parts/ball.h"
 #include "parts/flipper.h"
+#include "parts/plunger.h"
+#include "parts/light.h"
+#include "parts/ramp.h"
+#include "parts/surface.h"
+#include "parts/kicker.h"
+#include "parts/gate.h"
+#include "parts/spinner.h"
+#include "parts/trigger.h"
+#include "parts/hittarget.h"
+#include "parts/bumper.h"
+#include "parts/primitive.h"
+#include "parts/dragpoint.h"
+#include "physics/PhysicsEngine.h"
 #include "renderer/Renderer.h"
 #include "ui/live/LiveUI.h"
 
@@ -206,9 +219,248 @@ unsigned int MSGPIAPI VPXPluginAPIImpl::GetFlippers(VPXFlipperState* out, const 
          continue;
       if (total < maxCount)
       {
+         Flipper* const pflip = static_cast<Flipper*>(pedit);
          float angle = 0.f;
-         static_cast<Flipper*>(pedit)->get_CurrentAngle(&angle); // live angle in degrees
+         pflip->get_CurrentAngle(&angle); // live angle in degrees
          out[total].angle = angle;
+         out[total].angleSpeed = pflip->GetAngleSpeedDeg(); // deg per VP-tick
+         out[total].solenoid = pflip->IsSolenoidActive() ? 1 : 0;
+         out[total].endOfStroke = pflip->IsAtEndOfStroke() ? 1 : 0;
+      }
+      ++total;
+   }
+   return total;
+}
+
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetPlungers(VPXPlungerState* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   unsigned int total = 0;
+   for (IEditable* const pedit : g_pplayer->m_ptable->GetParts())
+   {
+      if (pedit->GetItemType() != eItemPlunger)
+         continue;
+      if (total < maxCount)
+      {
+         VPXPlungerState& p = out[total];
+         p.position = p.posVPU = p.speed = p.restPos = 0.f;
+         if (const PlungerMoverObject* const mv = static_cast<Plunger*>(pedit)->GetMover())
+         {
+            // 0 = fully forward (m_frameEnd), 1 = fully pulled back (m_frameStart)
+            const float denom = mv->m_frameEnd - mv->m_frameStart;
+            float norm = (denom != 0.f) ? (mv->m_frameEnd - mv->m_pos) / denom : 0.f;
+            norm = (norm < 0.f) ? 0.f : (norm > 1.f ? 1.f : norm);
+            p.position = norm;
+            p.posVPU = mv->m_pos;
+            p.speed = mv->m_speed;
+            p.restPos = mv->m_restPos;
+         }
+      }
+      ++total;
+   }
+   return total;
+}
+
+// Clamp a Light::m_inPlayState (0..1 modulated, 2.f = blinking) to the {0,1,2} mode enum.
+static int LampModeOf(const float inPlayState)
+{
+   const long m = lroundf(inPlayState);
+   return (m < 0) ? 0 : (m > 2 ? 2 : static_cast<int>(m));
+}
+
+// Static lamp directory (sent once at game start); also caches the light pointers so the per-tick
+// GetLamps() avoids re-scanning all table parts. Rebuild this whenever a game (re)starts.
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetLampDescriptors(VPXLampDesc* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   VPXPluginAPIImpl& me = g_pplayer->m_pluginAPI;
+   me.m_lampPtrs.clear();
+   unsigned int total = 0;
+   for (IEditable* const pedit : g_pplayer->m_ptable->GetParts())
+   {
+      if (pedit->GetItemType() != eItemLight)
+         continue;
+      Light* const pLight = static_cast<Light*>(pedit);
+      if (total < maxCount)
+      {
+         out[total].index = total;
+         const string name = pedit->GetName();
+         snprintf(out[total].name, sizeof(out[total].name), "%s", name.c_str());
+         out[total].mode = LampModeOf(pLight->m_inPlayState);
+      }
+      me.m_lampPtrs.push_back(pLight);
+      ++total;
+   }
+   return total;
+}
+
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetLamps(VPXLampState* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   VPXPluginAPIImpl& me = g_pplayer->m_pluginAPI;
+   const unsigned int total = static_cast<unsigned int>(me.m_lampPtrs.size());
+   for (unsigned int i = 0; i < total && i < maxCount; ++i)
+   {
+      Light* const pLight = me.m_lampPtrs[i];
+      out[i].mode = LampModeOf(pLight->m_inPlayState);
+      // Derive on/off + analog value from the live faded emission (m_currentIntensity): this
+      // captures dim and blink phase, and avoids GetInPlayStateBool()'s blink-pattern string
+      // indexing (which can trip an MSVC-debug subscript assert when called every tick).
+      const float intensity = pLight->m_currentIntensity;
+      out[i].intensity = intensity;
+      out[i].lit = (intensity > 0.01f) ? 1 : 0;
+   }
+   return total;
+}
+
+void MSGPIAPI VPXPluginAPIImpl::GetTableState(VPXTableState* out)
+{
+   memset(out, 0, sizeof(VPXTableState));
+   if (!g_pplayer || !g_pplayer->m_physics)
+      return;
+   PhysicsEngine* const phys = g_pplayer->m_physics;
+   const Vertex3Ds nudgeAcc = phys->GetNudgeAcceleration();
+   out->nudgeAccelX = nudgeAcc.x;
+   out->nudgeAccelY = nudgeAcc.y;
+   const Vertex2D vel = phys->GetTableVelocity();
+   out->tableVelX = vel.x;
+   out->tableVelY = vel.y;
+   const Vertex2D disp = phys->GetTableDisplacement();
+   out->tableDispX = disp.x;
+   out->tableDispY = disp.y;
+   // Bounds-check the action ids: IsPressed() asserts on an out-of-range id, and some actions
+   // (e.g. slam tilt) may be unmapped on a given table/config.
+   InputManager& in = g_pplayer->m_pininput;
+   const size_t nActions = in.GetInputActions().size();
+   const size_t tiltId = static_cast<size_t>(in.GetTiltActionId());
+   const size_t slamId = static_cast<size_t>(in.GetSlamTiltActionId());
+   out->tiltActive = (tiltId < nActions && in.IsPressed(static_cast<int>(tiltId))) ? 1 : 0;
+   out->slamTiltActive = (slamId < nActions && in.IsPressed(static_cast<int>(slamId))) ? 1 : 0;
+   out->plumbSimulated = phys->IsPlumbSimulated() ? 1 : 0;
+   out->plumbTiltCount = phys->GetPlumbTiltIndex();
+}
+
+// Static geometry of every collidable part, read once at game start. Field meanings are
+// type-specific (documented in plugins/bot-bridge/README.md). All lengths VPU, angles degrees.
+unsigned int MSGPIAPI VPXPluginAPIImpl::GetGeometry(VPXPartGeom* out, const unsigned int maxCount)
+{
+   if (!g_pplayer)
+      return 0;
+
+   unsigned int total = 0;
+   for (IEditable* const pedit : g_pplayer->m_ptable->GetParts())
+   {
+      const ItemTypeEnum type = pedit->GetItemType();
+      bool wanted = true;
+      VPXPartGeom g;
+      memset(&g, 0, sizeof(g));
+      g.type = static_cast<uint32_t>(type);
+
+      switch (type)
+      {
+      case eItemFlipper:
+      {
+         const FlipperData& d = static_cast<Flipper*>(pedit)->m_d;
+         g.x = d.m_Center.x; g.y = d.m_Center.y; g.z = d.m_height;
+         g.a = d.m_FlipperRadiusMax; g.b = d.m_BaseRadius; g.c = d.m_EndRadius; g.d = d.m_StartAngle;
+         g.ex = d.m_EndAngle;
+         break;
+      }
+      case eItemRamp:
+      {
+         Ramp* const r = static_cast<Ramp*>(pedit);
+         const RampData& d = r->m_d;
+         if (!r->m_vdpoint.empty())
+         {
+            const Vertex3Ds& entrance = r->m_vdpoint.front()->m_v; // bottom end
+            const Vertex3Ds& exit = r->m_vdpoint.back()->m_v;      // top end
+            g.x = entrance.x; g.y = entrance.y; g.z = d.m_heightbottom;
+            g.ex = exit.x; g.ey = exit.y; g.ez = d.m_heighttop;
+         }
+         g.a = d.m_widthbottom; g.b = d.m_widthtop; g.c = static_cast<float>(d.m_type);
+         break;
+      }
+      case eItemSurface:
+      {
+         Surface* const s = static_cast<Surface*>(pedit);
+         const SurfaceData& d = s->m_d;
+         float minx = 1e30f, miny = 1e30f, maxx = -1e30f, maxy = -1e30f;
+         for (const CComObject<DragPoint>* const dp : s->m_vdpoint)
+         {
+            minx = min(minx, dp->m_v.x); miny = min(miny, dp->m_v.y);
+            maxx = max(maxx, dp->m_v.x); maxy = max(maxy, dp->m_v.y);
+         }
+         if (!s->m_vdpoint.empty()) { g.x = minx; g.y = miny; g.ex = maxx; g.ey = maxy; }
+         g.a = d.m_heightbottom; g.b = d.m_heighttop;
+         break;
+      }
+      case eItemKicker:
+      {
+         const KickerData& d = static_cast<Kicker*>(pedit)->m_d;
+         g.x = d.m_vCenter.x; g.y = d.m_vCenter.y; g.z = d.m_hit_height;
+         g.a = d.m_radius; g.b = static_cast<float>(d.m_kickertype); g.c = d.m_orientation;
+         break;
+      }
+      case eItemTrigger:
+      {
+         const TriggerData& d = static_cast<Trigger*>(pedit)->m_d;
+         g.x = d.m_vCenter.x; g.y = d.m_vCenter.y; g.z = d.m_hit_height;
+         g.a = d.m_radius; g.b = static_cast<float>(d.m_shape); g.c = d.m_rotation;
+         break;
+      }
+      case eItemGate:
+      {
+         const GateData& d = static_cast<Gate*>(pedit)->m_d;
+         g.x = d.m_vCenter.x; g.y = d.m_vCenter.y; g.z = d.m_height;
+         g.a = d.m_length; g.b = d.m_rotation; g.c = d.m_angleMin; g.d = d.m_angleMax;
+         break;
+      }
+      case eItemSpinner:
+      {
+         const SpinnerData& d = static_cast<Spinner*>(pedit)->m_d;
+         g.x = d.m_vCenter.x; g.y = d.m_vCenter.y; g.z = d.m_height;
+         g.a = d.m_length; g.b = d.m_rotation; g.c = d.m_angleMin; g.d = d.m_angleMax;
+         break;
+      }
+      case eItemHitTarget:
+      {
+         const HitTargetData& d = static_cast<HitTarget*>(pedit)->m_d;
+         g.x = d.m_vPosition.x; g.y = d.m_vPosition.y; g.z = d.m_vPosition.z;
+         g.ex = d.m_vSize.x; g.ey = d.m_vSize.y; g.ez = d.m_vSize.z;
+         g.a = d.m_rotZ; g.b = static_cast<float>(d.m_targetType); g.c = d.m_isDropped ? 1.f : 0.f;
+         break;
+      }
+      case eItemBumper:
+      {
+         const BumperData& d = static_cast<Bumper*>(pedit)->m_d;
+         g.x = d.m_vCenter.x; g.y = d.m_vCenter.y; g.a = d.m_radius;
+         break;
+      }
+      case eItemPrimitive:
+      {
+         const PrimitiveData& d = static_cast<Primitive*>(pedit)->m_d;
+         g.x = d.m_vPosition.x; g.y = d.m_vPosition.y; g.z = d.m_vPosition.z;
+         g.ex = d.m_vSize.x; g.ey = d.m_vSize.y; g.ez = d.m_vSize.z;
+         break;
+      }
+      default:
+         wanted = false;
+         break;
+      }
+
+      if (!wanted)
+         continue;
+      if (total < maxCount)
+      {
+         const string name = pedit->GetName();
+         snprintf(g.name, sizeof(g.name), "%s", name.c_str());
+         out[total] = g;
       }
       ++total;
    }
@@ -770,6 +1022,11 @@ VPXPluginAPIImpl::VPXPluginAPIImpl(MsgPI::MsgPluginManager& pluginManager)
 
    m_api.GetBalls = GetBalls;
    m_api.GetFlippers = GetFlippers;
+   m_api.GetPlungers = GetPlungers;
+   m_api.GetLamps = GetLamps;
+   m_api.GetLampDescriptors = GetLampDescriptors;
+   m_api.GetGeometry = GetGeometry;
+   m_api.GetTableState = GetTableState;
 
    m_api.CreateTexture = CreateTexture;
    m_api.UpdateTexture = UpdateTexture;

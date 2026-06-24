@@ -164,6 +164,21 @@ public:
 
    uint64_t GetLastRotateTime() const { return m_lastRotateTime; }
 
+   // Live mover state for telemetry (valid only while playing; m_phitflipper!=nullptr).
+   // Angular speed in DEGREES per VP-tick (1 VPT = 0.01s); internal m_angleSpeed is rad/tick.
+   float GetAngleSpeedDeg() const { return m_phitflipper ? RADTOANG(m_phitflipper->m_flipperMover.m_angleSpeed) : 0.0f; }
+   // Coil energized? true = button pressed / solenoid driving toward the end angle.
+   bool IsSolenoidActive() const { return m_phitflipper ? m_phitflipper->m_flipperMover.m_solState : false; }
+   // Pressed against the END stop: physically in contact AND at the commanded end angle
+   // (1e-2f rad ~0.57deg is the engine's own contact-snap epsilon, see hitflipper.cpp UpdateVelocities).
+   bool IsAtEndOfStroke() const
+   {
+      if (!m_phitflipper)
+         return false;
+      const FlipperMoverObject& m = m_phitflipper->m_flipperMover;
+      return m.m_isInContact && (fabsf(m.m_angleCur - m.m_angleEnd) <= 1e-2f);
+   }
+
    FlipperData m_d;
 
 private:

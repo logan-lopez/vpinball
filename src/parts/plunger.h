@@ -162,6 +162,9 @@ public:
 
    PlungerData m_d;
 
+   // Live mover for telemetry (valid only while playing; null otherwise).
+   const PlungerMoverObject* GetMover() const { return m_phitplunger ? &m_phitplunger->m_plungerMover : nullptr; }
+
 private:
    Renderer *m_renderer = nullptr;
    std::shared_ptr<MeshBuffer> m_meshBuffer;

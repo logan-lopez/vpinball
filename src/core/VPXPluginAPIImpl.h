@@ -13,6 +13,7 @@
 #include "unordered_dense.h"
 
 class BaseTexture;
+class Light;
 
 // VPX serves as a plugin host, using the generic messaging plugin API
 // 
@@ -87,6 +88,11 @@ private:
    // Live game-state telemetry (read-only, in game only). [bot-bridge extension]
    static unsigned int MSGPIAPI GetBalls(VPXBallState* out, const unsigned int maxCount);
    static unsigned int MSGPIAPI GetFlippers(VPXFlipperState* out, const unsigned int maxCount);
+   static unsigned int MSGPIAPI GetPlungers(VPXPlungerState* out, const unsigned int maxCount);
+   static unsigned int MSGPIAPI GetLamps(VPXLampState* out, const unsigned int maxCount);
+   static unsigned int MSGPIAPI GetLampDescriptors(VPXLampDesc* out, const unsigned int maxCount);
+   static unsigned int MSGPIAPI GetGeometry(VPXPartGeom* out, const unsigned int maxCount);
+   static void MSGPIAPI GetTableState(VPXTableState* out);
 
    static VPXTexture MSGPIAPI CreateTexture(uint8_t* rawData, int size);
    static void MSGPIAPI UpdateTexture(VPXTexture* texture, int width, int height, VPXTextureFormat format, const void* image);
@@ -122,6 +128,9 @@ private:
    DynamicTypeLibrary m_dynamicTypeLibrary;
    ScriptablePluginAPI m_scriptableApi;
    const unsigned int m_getScriptingAPIMsgId;
+
+   // Cached light-part pointers for cheap per-tick lamp telemetry; (re)built by GetLampDescriptors. [bot-bridge]
+   vector<Light*> m_lampPtrs;
 
    // Contribute VPX script controlled DMD through controller plugin API
    vector<Flasher*> m_dmdSources;
