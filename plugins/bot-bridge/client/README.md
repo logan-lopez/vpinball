@@ -232,7 +232,8 @@ bridge serializes far faster. The parse-ceiling number above is the meaningful o
 for "can the client keep up with a 1 kHz stream" — yes.)
 
 ### Live (on a real table) — the checklist the brief calls for
-Use `console.py` and confirm by eye:
+Step-by-step instructions with the exact commands and pass criteria are in
+[`verify_live.md`](verify_live.md). In short, use `console.py` and confirm by eye:
 - [ ] **Coordinate frame:** nudge the ball — does `x` move with +X right, `y` with
       +Y down toward the drain? Is the active ball's position where the ball is?
 - [ ] **Units sane:** ball at rest sits at `z ≈ radius`; speeds look like VPU/tick.
