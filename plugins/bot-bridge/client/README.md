@@ -248,11 +248,14 @@ better than chance — it is the league's permanent floor.
 ```sh
 python latency_load_test.py            # measure RTT while reporting observed load
 ```
-It reports round-trip latency (send flip → motion seen in telemetry) once per
-second alongside the live load (fps, balls, lamps, dropped, KiB/s). **Induce the
-load** — start multiball + a light show, or let `panic_bot.py` keep balls going —
-and watch whether the median holds **under 5 ms**. (This is the check that catches
-a bridge that's clean at rest but buckles in multiball.)
+It reports **two** latencies once per second alongside the live load (fps, balls,
+lamps, dropped, KiB/s): **`applied`** (send → coil energized in telemetry — the
+true bridge round-trip, transport + tick + telemetry) and **`motion`** (send →
+flipper rotated >2°, which adds the mechanical coil ramp). **Induce the load** —
+start multiball + a light show — and watch whether the **`applied`** median holds
+**under 5 ms**. Gate on `applied`, not `motion`: the coil ramp keeps `motion`
+around 5 ms even when the bridge is fast. This is the check that catches a bridge
+clean at rest but buckling in multiball.
 
 > The offline numbers above are captured and reproducible. The live RTT-under-load
 > number must be taken on a running table and is left for that environment; the

@@ -137,12 +137,19 @@ Close the panic bot first. Then:
 python latency_load_test.py
 ```
 
-It measures the send-flip → motion-in-telemetry round-trip and prints, once per
-second, the **observed load** alongside the latency:
+It prints, once per second, the **observed load** alongside **two** latencies:
 
 ```
-load:   980 fps  3 ball(s)  64 lamps   612 KiB/s  dropped=  12345   |   RTT median= 4.71ms p95= 5.20ms  (n=37)
+load:   980 fps  3 ball(s)  64 lamps   612 KiB/s  dropped=  12345   |   applied= 2.80ms  motion= 5.05ms  (n=37)
 ```
+
+- **`applied`** = send → the coil energizes in telemetry (`solenoid=1`). This is the
+  **true bridge round-trip**: transport + tick + telemetry, *no flipper mechanics*.
+  **This is the number that should stay under 5 ms.**
+- **`motion`** = send → the flipper has rotated >2°. This adds the solenoid coil
+  ramp (mechanical), so it's always larger and is dominated by physics, not the
+  bridge. (A ~5 ms `motion` with a ~2-3 ms `applied` is healthy — most of the 5 ms
+  is the coil, not the link.)
 
 **Create the load yourself while it runs** (single-client means the bot can't also
 be connected, so *you* are the load generator):
@@ -153,16 +160,20 @@ be connected, so *you* are the load generator):
 2. Watch the per-second line. Compare **rest** (quiet single ball) to **busy**
    (multiball / heavy animation).
 
-At the end it prints a summary and a verdict:
+At the end it prints both summaries; the `applied` one carries the verdict:
 
 ```
+=== applied (send -> coil energized; the bridge round-trip) ===
+  median  :   2.80 ms
   -> sub-5ms holds: YES
 ```
 
-**Pass criteria:** the median round-trip stays **under 5 ms** when busy, not just
-at rest. If the median climbs well above 5 ms only under load, that's the bridge/
-engine buckling (the thing to catch before it shows up as "bots got worse in
-multiball"). Stop with Ctrl-C; it prints the final stats.
+**Pass criteria:** the **`applied`** median stays **under 5 ms** when busy, not just
+at rest — that's the bridge holding up. (Don't gate on `motion`; it includes the
+flipper coil ramp and will sit around 5 ms even when the bridge is fast.) What you
+want to rule out is `applied` climbing *only under load* — that would be the bridge/
+engine buckling, the thing to catch before it shows up as "bots got worse in
+multiball". Stop with Ctrl-C; it prints the final stats.
 
 > Offline reference (already captured, `--mock`): the *client* parse path sustains
 > ~14,000 frames/s with ~1-frame freshness lag, so anything above ~5 ms here is the

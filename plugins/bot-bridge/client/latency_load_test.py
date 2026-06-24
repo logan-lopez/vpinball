@@ -44,10 +44,18 @@ def run_live(args):
         if not bridge.wait_until_ready(timeout=60.0):
             print("[load] no telemetry: is a table running with the BotBridge plugin enabled?")
             return
-        print("[load] connected. Induce load now (multiball + light show, or run panic_bot).")
+        print("[load] connected. Induce load now (multiball + light show, or play the table).")
         print("[load] measuring round-trip latency; Ctrl-C to stop.\n")
 
-        rtts: list[float] = []
+        # Two metrics per flip:
+        #   applied = send -> the coil energizes in telemetry (solenoid=1). This is
+        #             the TRUE bridge round-trip: transport + tick + telemetry, with
+        #             no flipper mechanics. This is the number that should be < 5 ms.
+        #   motion  = send -> the flipper has rotated > threshold degrees. This adds
+        #             the solenoid coil ramp (mechanical), so it is always larger and
+        #             is dominated by physics, not the bridge.
+        applied: list[float] = []
+        motion: list[float] = []
         last_report = time.perf_counter()
         last_frames = bridge.stats["frames_received"]
         last_bytes = bridge.stats["bytes_received"]
@@ -55,9 +63,11 @@ def run_live(args):
 
         try:
             while time.perf_counter() - start < args.duration:
-                rtt = _measure_one_rtt(bridge, args.threshold)
-                if rtt is not None:
-                    rtts.append(rtt)
+                a, m = _measure_one_rtt(bridge, args.threshold)
+                if a is not None:
+                    applied.append(a)
+                if m is not None:
+                    motion.append(m)
 
                 now = time.perf_counter()
                 if now - last_report >= 1.0:
@@ -69,12 +79,11 @@ def run_live(args):
                     last_report, last_frames, last_bytes = now, st["frames_received"], st["bytes_received"]
                     nballs = len(s.balls) if s else 0
                     nlamps = len(s.lamps) if s else 0
-                    recent = rtts[-25:]
-                    med = statistics.median(recent) if recent else float("nan")
-                    p95 = (sorted(recent)[max(0, int(len(recent) * 0.95) - 1)] if recent else float("nan"))
+                    med_a = statistics.median(applied[-25:]) if applied else float("nan")
+                    med_m = statistics.median(motion[-25:]) if motion else float("nan")
                     print(f"  load: {fps:6.0f} fps  {nballs} ball(s)  {nlamps} lamps  "
                           f"{kbps:6.0f} KiB/s  dropped={st['frames_dropped']:>7}   |   "
-                          f"RTT median={med:5.2f}ms p95={p95:5.2f}ms  (n={len(rtts)})")
+                          f"applied={med_a:5.2f}ms  motion={med_m:5.2f}ms  (n={len(applied)})")
 
                 time.sleep(args.gap)
         except KeyboardInterrupt:
@@ -82,38 +91,49 @@ def run_live(args):
         finally:
             bridge.flip_left(False)
 
-        _report_rtt(rtts)
+        _report_rtt("applied (send -> coil energized; the bridge round-trip)", applied, gate=5.0)
+        _report_rtt("motion  (send -> flipper rotated; includes coil ramp)", motion, gate=None)
 
 
 def _measure_one_rtt(bridge: vpxbot.BridgeClient, threshold: float):
-    """Send a flip, time until any flipper deviates > threshold degrees."""
+    """Send a flip and time two things: when the coil energizes (solenoid=1, the
+    bridge round-trip) and when the flipper has rotated > threshold degrees (adds
+    the mechanical coil ramp). Returns (applied_ms, motion_ms), either may be None."""
     base = bridge.latest_state()
     if base is None or not base.flippers:
         time.sleep(0.05)
-        return None
+        return None, None
+    # Need a clean resting baseline: no coil already energized.
+    if any(f.solenoid for f in base.flippers):
+        time.sleep(0.1)
+        return None, None
     baseline = [f.angle for f in base.flippers]
 
     t0 = time.perf_counter()
     bridge.flip_left(True)
-    moved_at = None
+    applied_at = None
+    motion_at = None
     deadline = t0 + 1.0
-    while time.perf_counter() < deadline:
+    while time.perf_counter() < deadline and (applied_at is None or motion_at is None):
         s = bridge.wait_for_state(timeout=1.0)
         if s is None:
             break
-        if any(abs(f.angle - baseline[i]) > threshold
-               for i, f in enumerate(s.flippers) if i < len(baseline)):
-            moved_at = time.perf_counter()
-            break
+        now = time.perf_counter()
+        if applied_at is None and any(f.solenoid for f in s.flippers):
+            applied_at = now
+        if motion_at is None and any(abs(f.angle - baseline[i]) > threshold
+                                     for i, f in enumerate(s.flippers) if i < len(baseline)):
+            motion_at = now
     bridge.flip_left(False)
     time.sleep(0.20)  # let it fall back before the next trial
-    return (moved_at - t0) * 1000.0 if moved_at is not None else None
+    return ((applied_at - t0) * 1000.0 if applied_at is not None else None,
+            (motion_at - t0) * 1000.0 if motion_at is not None else None)
 
 
-def _report_rtt(rtts: list[float]):
-    print("\n=== round-trip latency (send flip -> motion observed in telemetry) ===")
+def _report_rtt(label: str, rtts: list[float], gate):
+    print(f"\n=== {label} ===")
     if not rtts:
-        print("  no samples (did a flipper ever move?)")
+        print("  no samples")
         return
     rtts_sorted = sorted(rtts)
     p95 = rtts_sorted[max(0, int(len(rtts_sorted) * 0.95) - 1)]
@@ -123,7 +143,8 @@ def _report_rtt(rtts: list[float]):
     print(f"  mean    : {statistics.mean(rtts):6.2f} ms")
     print(f"  p95     : {p95:6.2f} ms")
     print(f"  max     : {max(rtts):6.2f} ms")
-    print(f"  -> sub-5ms holds: {'YES' if statistics.median(rtts) < 5.0 else 'NO'}")
+    if gate is not None:
+        print(f"  -> sub-{gate:.0f}ms holds: {'YES' if statistics.median(rtts) < gate else 'NO'}")
 
 
 # --------------------------------------------------------------------------- #
