@@ -113,7 +113,9 @@ One per physics update.
   "plungers": [ { "i":0,"pos":0.167,"posVPU":1943.3,"speed":-0.026,"rest":0.167 } ],
   "lamps":    [ { "i":0,"mode":1,"lit":1,"in":0.85 }, ... ],  // by index (see static lamp directory)
   "nudge":    { "ax":0,"ay":0, "vx":0,"vy":0, "dx":0,"dy":0,
-                "tilt":0,"slam":0,"plumbSim":1,"plumbCount":0 }
+                "tilt":0,"slam":0,"plumbSim":1,"plumbCount":0 },
+  "events":   [ { "t":64.90,"type":8,"kind":0,"scalar":0.0,"name":"Drain" },   // discrete hits since last tick
+                { "t":64.92,"type":8,"kind":1,"scalar":0.0,"name":"BallRelease" } ]
 }
 ```
 
@@ -129,6 +131,14 @@ Field notes:
 - **nudge** `ax,ay` applied acceleration VPU/VPT²; `vx,vy` table velocity VPU/VPT;
   `dx,dy` visual shake displacement VPU (screen frame, y flipped); `tilt`/`slam`
   current input booleans; `plumbCount` monotonic mechanical-tilt event count.
+- **events** discrete physical hits since the previous tick (drained from an engine
+  ring): `type` = ItemTypeEnum; `name` = element name (correlate to the static
+  geometry); `kind` = 0 hit, 1 unhit, 2 slingshot, 3 spin, 4 eos, 5 bos, 6
+  flipperCollide; `scalar` = payload (e.g. spin speed); `t` = event game time.
+  Covers ball↔wall/ramp/target/primitive/rubber hits, bumpers, slingshots,
+  spinner spins, and trigger/kicker **hit + unhit** (rollover/scoop entry+exit).
+  These are PHYSICAL hits, not ROM logical switch numbers (mapping a hit to a game
+  switch is table-specific).
 
 ## Commands (one NDJSON object per line)
 
@@ -158,10 +168,11 @@ flipper coil ramp. Well under one 60 Hz frame.
 
 ## Known gaps / next
 
-- **Discrete switch/hit event stream** (e.g. spinner spin, target drop as events)
-  is not yet implemented — currently inferable from per-tick state. The
-  least-invasive engine hook (a ring buffer drained on `OnUpdatePhysics`) is
-  designed in `FINDINGS.md`/the M2 investigation and is the next addition.
+- **EOS/BOS limit events** (gate/spinner end-of-travel) and **flipper-collide**
+  events are reserved in the event-kind enum but not yet hooked (flipper EOS is
+  already in per-tick state; the others are minor). The hit/switch event stream
+  itself (hits, bumpers, slingshots, spinner spins, trigger/kicker hit+unhit) is
+  implemented and verified.
 - **Score / ball-in-play** is not exposed — no uniform engine representation
   (table-/ROM-specific; would come from a DMD/segment OCR or per-table config).
 - Lamp `lit` is derived from live intensity (not the blink-pattern boolean, which

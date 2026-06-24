@@ -64,6 +64,7 @@ static const unsigned int kMaxFlippers = 16;
 static const unsigned int kMaxPlungers = 4;
 static const unsigned int kMaxLamps = 256;
 static const unsigned int kMaxGeom = 2048;
+static const unsigned int kMaxEvents = 128;
 
 // --- plugin / message bus state (main thread only) -----------------------
 const MsgPluginAPI* msgApi = nullptr;
@@ -76,12 +77,13 @@ struct Snapshot
 {
    uint64_t tick = 0;
    double time = 0.0;
-   unsigned int nballs = 0, nflippers = 0, nplungers = 0, nlamps = 0;
+   unsigned int nballs = 0, nflippers = 0, nplungers = 0, nlamps = 0, nevents = 0;
    VPXBallState balls[kMaxBalls];
    VPXFlipperState flippers[kMaxFlippers];
    VPXPlungerState plungers[kMaxPlungers];
    VPXLampState lamps[kMaxLamps];
    VPXTableState table;
+   VPXHitEvent events[kMaxEvents];
 };
 
 std::mutex g_txMutex;
@@ -177,10 +179,21 @@ static std::string serializeState(const Snapshot& s)
    const VPXTableState& t = s.table;
    snprintf(buf, sizeof(buf),
       "],\"nudge\":{\"ax\":%.5f,\"ay\":%.5f,\"vx\":%.5f,\"vy\":%.5f,\"dx\":%.4f,\"dy\":%.4f,"
-      "\"tilt\":%d,\"slam\":%d,\"plumbSim\":%d,\"plumbCount\":%d}}\n",
+      "\"tilt\":%d,\"slam\":%d,\"plumbSim\":%d,\"plumbCount\":%d}",
       t.nudgeAccelX, t.nudgeAccelY, t.tableVelX, t.tableVelY, t.tableDispX, t.tableDispY,
       t.tiltActive, t.slamTiltActive, t.plumbSimulated, t.plumbTiltCount);
    out += buf;
+   out += ",\"events\":[";
+   for (unsigned int i = 0; i < s.nevents; ++i)
+   {
+      const VPXHitEvent& e = s.events[i];
+      snprintf(buf, sizeof(buf), "%s{\"t\":%.4f,\"type\":%u,\"kind\":%u,\"scalar\":%.4f,\"name\":",
+         i ? "," : "", e.timeSec, e.partType, e.eventKind, e.scalar);
+      out += buf;
+      appendJsonStr(out, e.name);
+      out += '}';
+   }
+   out += "]}\n";
    return out;
 }
 
@@ -425,6 +438,8 @@ void onUpdatePhysics(const unsigned int, void*, void*)
    if (snap.nlamps > kMaxLamps) snap.nlamps = kMaxLamps;
    if (vpxApi->GetTableState) vpxApi->GetTableState(&snap.table);
    else memset(&snap.table, 0, sizeof(snap.table));
+   snap.nevents = vpxApi->GetHitEvents ? vpxApi->GetHitEvents(snap.events, kMaxEvents) : 0;
+   if (snap.nevents > kMaxEvents) snap.nevents = kMaxEvents;
 
    {
       std::lock_guard<std::mutex> lk(g_txMutex);
