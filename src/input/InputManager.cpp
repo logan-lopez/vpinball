@@ -1114,17 +1114,29 @@ Vertex2D InputManager::GetNudge() const
 
 void InputManager::SetPlungerPos(bool overrideInput, const float pos)
 {
-   // FIXME
+   // No-op unless overriding, so keyboard/hardware plunger is untouched when the plugin is not driving it.
+   // NOTE: PhysicsSensor::Override is a sticky one-way latch (no un-override without an engine change),
+   // so once a plugin drives the analog plunger, hardware input to it is suppressed until table reload.
+   if (overrideInput)
+      m_plungerPositionSensor->Override(pos);
 }
 
 void InputManager::SetPlungerSpeed(bool overrideInput, const float speed)
 {
-   // FIXME
+   // Only has an effect on rigs with a mapped hardware velocity sensor (HasMechPlungerSpeed()); best-effort.
+   if (overrideInput)
+      m_plungerVelocitySensor->Override(speed);
 }
 
 void InputManager::SetNudge(bool overrideInput, const float nudgeAccelerationX, const float nudgeAccelerationY)
 {
-   // FIXME
+   // Inject into nudge sensor pair 0; GetNudge() skips unmapped pairs. Values interpreted in the
+   // configured sensor frame (NudgeOrientation, 0 by default). No-op when not overriding.
+   if (overrideInput)
+   {
+      m_nudgeXSensor[0]->Override(nudgeAccelerationX);
+      m_nudgeYSensor[0]->Override(nudgeAccelerationY);
+   }
 }
 
 #pragma endregion
