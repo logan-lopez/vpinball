@@ -257,9 +257,20 @@ start multiball + a light show — and watch whether the **`applied`** median ho
 around 5 ms even when the bridge is fast. This is the check that catches a bridge
 clean at rest but buckling in multiball.
 
-> The offline numbers above are captured and reproducible. The live RTT-under-load
-> number must be taken on a running table and is left for that environment; the
-> tool prints a `sub-5ms holds: YES/NO` verdict.
+**Confirmed on a real table.** On **AC/DC** (Stern ROM table via PinMAME), 2-ball
+multiball, 146 lamps, the bridge streaming ~990 fps / ~6.3 MB/s (Release build):
+
+| metric | median | p95 | max |
+|---|---|---|---|
+| `applied` (bridge round-trip) | **1.29 ms** | 1.78 ms | 2.08 ms |
+| `motion` (incl. flipper coil ramp) | 4.96 ms | 5.69 ms | 6.63 ms |
+
+`applied` stayed flat at ~1 ms across the whole run (through ~25k dropped frames),
+so the bridge does **not** degrade under multiball + light-show load. The ~5 ms
+`motion` is the solenoid coil ramp, not the link. Sub-5 ms holds with ~4× margin.
+
+> Note: this requires a **Release** engine build — a Debug build fires assertions
+> and breaks real tables regardless of the bridge.
 
 ---
 
